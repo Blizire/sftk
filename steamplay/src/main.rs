@@ -1,74 +1,55 @@
 use std::fs;
+//use std::path;
 
 fn main() {
     println!("steamplay - 0.0.1");
-    enumerate_steam_library();
+
+    // Iterators for each drive on a windows system.
+    let drive_iterators = enumerate_drives();
+
+    for drive in drive_iterators {
+        enumerate_directories(drive);
+    }
 }
 
-fn enumerate_steam_library() {
-    
-    // enumerate drives on a windows system
-    let valid_drives = enumerate_drives();
-
-    // start searching through each drive
-    let mut search_results = Vec::new();
-    for drive in valid_drives {
-        let paths = steam_library_search(&drive);
-        match paths {
-            Some(p) => {
-                search_results.push(p)
+fn enumerate_directories(dir: std::fs::ReadDir) {
+    // assumes its being given an iterator from fs::read_dir, then will use that
+    // to enumerate the directories and sub-directories based on the "depth"
+    let mut search_paths = Vec::new();
+    // flatten is cool, silently drops errors and returns only valid values
+    for entry in dir.flatten() {
+        match entry.file_type() {
+            Ok(e) => {
+                if e.is_dir() {
+                    search_paths.push(entry);
+                }
             },
-            None => continue
-        }
+            Err(_) => {}
+        };
     }
+    // TODO: implement depth somehow so we can dive into these sub directories
+    println!("{:?}", search_paths);
 }
 
-fn steam_library_search(root: &String) -> Option<Vec<String>>  {
+fn enumerate_drives() -> Vec<std::fs::ReadDir> {
 
-    // search into sub-directories looking for the steamapps folder.
-    
-    let mut found_paths = Vec::new();
+    // searches for all valid windows drives, returns an iterator that
+    // can read through the directory listing.
 
-    let dir_entries = match fs::read_dir(root) {
-        Ok(entries) => entries,
-        Err(_) => return None
-    };
-
-    for entry in dir_entries {
-        let entry = match entry {
-            Ok(s) => s,
-            Err(_) => return None
-        };
-
-        let entrystr = match entry.file_name().into_string() {
-            Ok(s) => s,
-            Err(_) => return None
-        };
-
-        if entrystr == "steamapps" {
-            found_paths.push(String::from(&entrystr));
-        }
-    }
-
-    Some(found_paths)
-}
-
-fn enumerate_drives() -> Vec<String> {
+    let mut valid_drives = Vec::new();
 
     // generate a vector of strings that represents typical windows disk drives
-    // c:/ d:/ e:/ etc...
-    
+    // a:/ b:/ c:/ etc...
     let logical_drives: Vec<String> = ('a'..='z')
         .map(|c| format!("{}:/", c))
         .collect();
-    
-    let mut valid_drives = Vec::new();
 
     for drive in logical_drives {
-        let read_status = fs::read_dir(&drive);
-        match read_status {
-            Ok(_) => {
-                valid_drives.push(drive);
+        match fs::read_dir(&drive) {
+            Ok(e) => {
+                // pushes an iterator that can read the contents of these directories
+                // into a vector for return.
+                valid_drives.push(e);
             }
             Err(_) => {
                 continue
