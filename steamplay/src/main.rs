@@ -1,10 +1,23 @@
 mod util;
 
 use std::path::PathBuf;
+use std::process::{Command};
+use std::os::windows::process::CommandExt;
+use std::ffi::os_str::OsStr;
 
 fn main() {
-
     println!("steamplay - 0.0.1");
+    
+    if let Some(path) = select_game("noita.exe") {
+        start_game(path);
+    }
+}
+
+fn select_game(game_name: &str) -> Option<PathBuf> {
+
+    // game_name is a str that represents the executables filename, this function
+    // will search for your steam library then scan for that executable.
+
     let mut games = Vec::new();
     for path in find_steamapps() {
         for _games in find_games(path) {
@@ -12,9 +25,28 @@ fn main() {
         }
     }
 
-    for g in games {
-        println!("{:?}", g);
+    // provide a game_name string that matches exactly with the executable
+    for game in games {
+        if let Some(fname) = game.file_name() {
+            if fname == OsStr::new(game_name) {
+                return Some(game);
+            }
+        }
     }
+    None
+} 
+
+fn start_game(path: PathBuf) {
+
+    // process creation flags
+    const DETACHED_PROCESS: u32 = 0x00000008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+
+    let _ = Command::new(&path)
+        .current_dir(path.parent().unwrap())
+        .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
+        .spawn()
+        .expect("failed to start process");
 }
 
 fn find_steamapps() -> Vec<PathBuf> {
