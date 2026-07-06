@@ -1,25 +1,59 @@
 mod util;
 
 use std::path::PathBuf;
-use std::process::{Command};
+use std::process::{Command, Child};
 use std::os::windows::process::CommandExt;
 use std::ffi::os_str::OsStr;
+use std::fs::File;
+use std::io::{Read, Write};
 
 fn main() {
     println!("steamplay - 0.0.1");
-    
-    if let Some(path) = select_game("noita.exe") {
-        start_game(path);
+
+    if let Some(game_path) = select_game("noita.exe") {
+        println!("game path : {:?}", game_path);
+        start_game(game_path);
     }
+}
+
+fn cache_path_save(paths: &[PathBuf], path: &str) -> Result<(), std::io::Error> {
+
+    // save the paths found into a file
+    let mut file = File::create(path)?;
+    for p in paths {
+        writeln!(file, "{}", p.display())?;
+    }
+    Ok(())
+}
+
+fn cache_path_load(path: &str) -> Result<Vec<PathBuf>, std::io::Error> {
+
+    let mut file = File::open(path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    Ok(contents.lines().map(|l| PathBuf::from(l.trim())).collect::<Vec<_>>())
 }
 
 fn select_game(game_name: &str) -> Option<PathBuf> {
 
-    // game_name is a str that represents the executables filename, this function
-    // will search for your steam library then scan for that executable.
+    let cache_path = "./steampapps.cache";
 
+    // check if cache exists, if so lets load it to save time
+    let steamapps_path_vec = if let Ok(loaded_paths) = cache_path_load(cache_path) {
+        println!("Loaded {} paths from cache", loaded_paths.len());
+        loaded_paths
+    } else {
+        // cache not found so we are going to manually search and create cache
+        println!("Cache not found, performing manual search...");
+        let paths = find_steamapps();
+        cache_path_save(&paths, cache_path).unwrap();
+        paths
+    };
+
+
+    // walk the steamapps paths and search for executables
     let mut games = Vec::new();
-    for path in find_steamapps() {
+    for path in steamapps_path_vec {
         for _games in find_games(path) {
             games.push(_games);
         }
@@ -36,17 +70,19 @@ fn select_game(game_name: &str) -> Option<PathBuf> {
     None
 } 
 
-fn start_game(path: PathBuf) {
+fn start_game(path: PathBuf) -> Child {
 
     // process creation flags
     const DETACHED_PROCESS: u32 = 0x00000008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
 
-    let _ = Command::new(&path)
+    let child = Command::new(&path)
         .current_dir(path.parent().unwrap())
         .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
         .spawn()
         .expect("failed to start process");
+
+    child
 }
 
 fn find_steamapps() -> Vec<PathBuf> {
@@ -55,9 +91,9 @@ fn find_steamapps() -> Vec<PathBuf> {
     let mut found_paths = Vec::new();
     let mut steamapp_paths = Vec::new();
 
-    // TODO cache the steamapp library locations
     // TODO make depth configurable at runtime through cli params or config file
 
+    // search through all the windows drivers to enumerate paths on fs
     for root in util::fs::enumerate_drives() {
         let path = util::fs::enumerate_directory_depth(root, 2);
         found_paths.extend(path);
@@ -70,6 +106,7 @@ fn find_steamapps() -> Vec<PathBuf> {
             }
         }
     }
+    
     steamapp_paths
 }
 
